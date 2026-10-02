@@ -30,6 +30,19 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/stats")
+def status_stats() -> dict[str, int]:
+    """各状态条数：页面统计卡片与列表走同一份数据。"""
+    return service.status_summary()
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出开关电源清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "rectifier", "total": total, "items": items}
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条开关电源明细；不存在时给出可读的错误说明。"""
@@ -48,18 +61,20 @@ def create_entry(payload: EntryPayload) -> ActionResult:
     return ActionResult(ok=True, message="开关电源已登记", entry=entry)
 
 
-@router.post("/{entry_id}/actions", response_model=ActionResult)
-def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条开关电源执行记录缺失、记录异常、安排更换；不允许的动作会被拦下并说明原因。"""
-    action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
+@router.put("/{entry_id}", response_model=ActionResult)
+def update_entry(entry_id: int, payload: EntryPayload) -> ActionResult:
+    """保存运行参数：详情页与处理单共用一个写入口，保存后列表、详情同源刷新。"""
+    entry, message = service.update_entry(entry_id, payload.values)
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
 
 
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出开关电源清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "rectifier", "total": total, "items": items}
+@router.post("/{entry_id}/actions", response_model=ActionResult)
+def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
+    """对单条开关电源执行记录缺失、记录异常、安排更换；整流模块数等参数随动作一起落盘。"""
+    action = str(payload.values.get("action") or "").strip()
+    entry, message = service.run_action(entry_id, action, payload.values)
+    if entry is None:
+        return ActionResult(ok=False, message=message)
+    return ActionResult(ok=True, message=message, entry=entry)
